@@ -1,26 +1,68 @@
-name: 服务地址的修改
+name: 后端服务地址修改
 
-on: push
-
-permissions:
-  contents: write
+on:
+  push:
+    branches:
+      - main  # 触发部署的分支
 
 jobs:
-  npm-build:
-    name: npm-build工作
+  deploy:
     runs-on: ubuntu-latest
 
     steps:
-      - name: 读取仓库内容
-        uses: actions/checkout@v4
+      - name: Checkout 代码
+        uses: actions/checkout@v2
 
-      - name: 安装依赖和项目打包
+      - name: 安装 NGINX
+        run: |
+          sudo apt update
+          sudo apt install nginx -y
+
+      - name: 配置 NGINX
+        run: |
+          # 移除 NGINX 默认配置文件
+          sudo rm /etc/nginx/sites-enabled/default
+          # 创建 NGINX 配置文件
+          echo '
+          server {
+            listen 80;
+            server_name wszqj.github.io; # 这里填写你的域名或 GitHub Pages 地址
+
+            location /api {
+              proxy_pass  http://txdfsz.natappfree.cc; # 这里填写你的后端服务地址
+              proxy_set_header Host $host;
+              proxy_set_header X-Real-IP $remote_addr;
+              proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+              proxy_set_header X-Forwarded-Proto $scheme;
+            }
+
+            # 配置静态文件路径
+            location / {
+              root /github/workspace/dist; # 这里填写你 Vue 应用的 dist 目录路径
+              index index.html index.htm;
+            }
+            error_page   500 502 503 504  /50x.html;
+            location = /50x.html {
+              root   /usr/share/nginx/html;
+            }
+          }' | sudo tee /etc/nginx/sites-available/vueapp
+
+          # 创建符号链接
+          sudo ln -s /etc/nginx/sites-available/vueapp /etc/nginx/sites-enabled/vueapp
+
+          # 检查 NGINX 配置
+          sudo nginx -t
+
+          # 重启 NGINX
+          sudo service nginx restart
+
+      - name: 构建 Vue 应用
         run: |
           npm install
           npm run build
 
-      - name: 部署
-        uses: JamesIves/github-pages-deploy-action@v4
+      - name: 部署到 GitHub Pages
+        uses: peaceiris/actions-gh-pages@v4
         with:
-          branch: gh-pages
-          folder: dist
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./dist
